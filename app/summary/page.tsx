@@ -73,7 +73,8 @@ function formatMoney(value: number) {
 
 export default function SummaryPage() {
   const router = useRouter();
-  const supabase = useMemo(() => createClient(), []);
+    const supabase = useMemo(() => createClient(), []);
+    
 
   const [households, setHouseholds] = useState<Household[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -81,7 +82,14 @@ export default function SummaryPage() {
   const [householdId, setHouseholdId] = useState("");
   const [month, setMonth] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+    const [error, setError] = useState("");
+    
+const [sharing, setSharing] = useState(false);
+const [shareError, setShareError] = useState("");
+const [shareUrl, setShareUrl] = useState("");
+const [whatsappUrl, setWhatsappUrl] = useState("");
+const [linkExpiresAt, setLinkExpiresAt] = useState("");
+
 
   useEffect(() => {
     setMonth(getCurrentMonth());
@@ -225,6 +233,41 @@ export default function SummaryPage() {
     );
   }
 
+async function handleShareSummary() {
+  setSharing(true);
+  setShareError("");
+  setShareUrl("");
+  setWhatsappUrl("");
+  setLinkExpiresAt("");
+
+  try {
+    const response = await fetch("/api/summary-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        engagementId: householdId,
+        month: month.slice(0, 7),
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Could not generate the link.");
+    }
+
+    setShareUrl(result.summaryUrl);
+    setWhatsappUrl(result.whatsappUrl);
+    setLinkExpiresAt(result.expiresAt);
+  } catch (error) {
+    setShareError(
+      error instanceof Error ? error.message : "Something went wrong."
+    );
+  } finally {
+    setSharing(false);
+  }
+}
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 sm:px-8">
       <div className="mx-auto max-w-3xl space-y-6">
@@ -240,6 +283,68 @@ export default function SummaryPage() {
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">
             Monthly summary
           </h1>
+
+<section className="rounded-2xl border border-emerald-200 bg-white p-5">
+  <h2 className="text-lg font-bold text-slate-900">
+    Share monthly statement
+  </h2>
+
+  <p className="mt-1 text-sm text-slate-600">
+    Generate a read-only link for this household and month.
+    The link expires after seven days.
+  </p>
+
+  <button
+    type="button"
+    onClick={handleShareSummary}
+    disabled={sharing || loading || !householdId || !month}
+    className="mt-4 rounded-xl bg-emerald-600 px-5 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+  >
+    {sharing ? "Generating link..." : "Generate share link"}
+  </button>
+
+  {shareError && (
+    <p role="alert" className="mt-3 text-sm text-red-700">
+      {shareError}
+    </p>
+  )}
+
+  {shareUrl && (
+    <div className="mt-4 space-y-3 rounded-xl bg-slate-50 p-4">
+      <p className="break-all text-sm text-slate-700">{shareUrl}</p>
+
+      <a
+        href={whatsappUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white"
+      >
+        Share via WhatsApp
+      </a>
+
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(shareUrl);
+            setShareError("");
+          } catch {
+            setShareError("Copy failed. Please copy the link manually.");
+          }
+        }}
+        className="ml-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm"
+      >
+        Copy link
+      </button>
+
+      {linkExpiresAt && (
+        <p className="text-xs text-slate-500">
+          Expires: {new Date(linkExpiresAt).toLocaleString("en-IN")}
+        </p>
+      )}
+    </div>
+  )}
+</section>
 
           <p className="mt-2 text-slate-600">
             A clear record of leave and advances for each household.
