@@ -1,6 +1,13 @@
+
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -17,6 +24,11 @@ type Entry = {
   amount: number | null;
   note: string | null;
   status: "pending" | "confirmed" | "contested";
+};
+
+type ShareLink = {
+  confirmationUrl: string;
+  whatsappUrl: string;
 };
 
 const TYPE_OPTIONS: {
@@ -72,13 +84,12 @@ const inputClass =
   "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-400 transition focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100";
 
 function typeMeta(type: Entry["type"]) {
-  return TYPE_OPTIONS.find((o) => o.value === type) ?? TYPE_OPTIONS[0];
+  return TYPE_OPTIONS.find((option) => option.value === type) ?? TYPE_OPTIONS[0];
 }
 
-// Parse "YYYY-MM-DD" manually so dates never shift with timezones.
 function parseDate(value: string) {
-  const [y, m, d] = value.split("-").map(Number);
-  return new Date(y, (m || 1) - 1, d || 1);
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
 }
 
 function formatMoney(value: number) {
@@ -90,11 +101,21 @@ function monthKey(value: string) {
 }
 
 function monthLabel(key: string) {
-  const [y, m] = key.split("-").map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString("en-IN", {
+  const [year, month] = key.split("-").map(Number);
+
+  return new Date(year, month - 1, 1).toLocaleDateString("en-IN", {
     month: "long",
     year: "numeric",
   });
+}
+
+function getLocalDateValue() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 export default function RecordsPage() {
@@ -105,14 +126,19 @@ export default function RecordsPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [householdId, setHouseholdId] = useState("");
   const [type, setType] = useState<Entry["type"]>("leave");
-    //const [date, setDate] = useState(new Date().toLocaleDateString("en-CA"));
   const [date, setDate] = useState("");
+  const [currentMonthKey, setCurrentMonthKey] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const [sharingEntryId, setSharingEntryId] = useState<string | null>(null);
+  const [shareLinks, setShareLinks] = useState<Record<string, ShareLink>>({});
+  const [shareError, setShareError] = useState("");
 
   const fetchEntries = useCallback(async () => {
     const { data, error: entryError } = await supabase
@@ -120,8 +146,16 @@ export default function RecordsPage() {
       .select("id, engagement_id, type, entry_date, amount, note, status")
       .order("entry_date", { ascending: false });
 
-    return { data: (data ?? []) as Entry[], error: entryError };
+    return {
+      data: (data ?? []) as Entry[],
+      error: entryError,
+    };
   }, [supabase]);
+
+  useEffect(() => {
+    setDate(getLocalDateValue());
+    setCurrentMonthKey(getLocalDateValue().slice(0, 7));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,7 +192,7 @@ export default function RecordsPage() {
       setHouseholds((householdData ?? []) as Household[]);
 
       if (householdData?.length) {
-        setHouseholdId(householdData[0].id);
+        setHouseholdId((previous) => previous || householdData[0].id);
       }
 
       const { data: entryData, error: entryError } = await fetchEntries();
@@ -186,6 +220,7 @@ export default function RecordsPage() {
     event.preventDefault();
     setError("");
     setSuccess("");
+    setShareError("");
 
     if (!householdId) {
       setError("Please add a household first.");
@@ -229,19 +264,14 @@ export default function RecordsPage() {
       });
 
       if (insertError) {
-        console.error("Save record failed:", {
-          code: insertError.code,
-          message: insertError.message,
-          details: insertError.details,
-          hint: insertError.hint,
-        });
+        console.error("Save record failed:", insertError);
         setError(`Save failed: ${insertError.message}`);
         return;
       }
 
       setAmount("");
       setNote("");
-      setSuccess("Record saved. Your employer can now confirm it.");
+      setSuccess("Record saved. You can now request employer confirmation.");
 
       const { data: entryData, error: reloadError } = await fetchEntries();
 
@@ -258,6 +288,46 @@ export default function RecordsPage() {
     }
   }
 
+  async function handleRequestConfirmation(entry: Entry) {
+    setSharingEntryId(entry.id);
+    setShareError("");
+
+    try {
+      const response = await fetch(
+        `/api/entries/${entry.id}/confirmation`,
+        { method: "POST" }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error || "Could not generate a confirmation link."
+        );
+      }
+
+      if (!result.confirmationUrl || !result.whatsappUrl) {
+        throw new Error("The server did not return the confirmation links.");
+      }
+
+      setShareLinks((previous) => ({
+        ...previous,
+        [entry.id]: {
+          confirmationUrl: result.confirmationUrl,
+          whatsappUrl: result.whatsappUrl,
+        },
+      }));
+    } catch (caughtError) {
+      setShareError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Something went wrong. Please try again."
+      );
+    } finally {
+      setSharingEntryId(null);
+    }
+  }
+
   const visibleEntries = useMemo(
     () =>
       entries.filter((entry) =>
@@ -268,35 +338,37 @@ export default function RecordsPage() {
 
   const grouped = useMemo(() => {
     const map = new Map<string, Entry[]>();
+
     for (const entry of visibleEntries) {
       const key = monthKey(entry.entry_date);
       map.set(key, [...(map.get(key) ?? []), entry]);
     }
+
     return Array.from(map.entries());
   }, [visibleEntries]);
 
   const thisMonth = useMemo(() => {
-    const key = new Date().toLocaleDateString("en-CA").slice(0, 7);
-    const monthEntries = visibleEntries.filter(
-      (e) => monthKey(e.entry_date) === key
-    );
+    const monthEntries = currentMonthKey
+      ? visibleEntries.filter(
+          (entry) => monthKey(entry.entry_date) === currentMonthKey
+        )
+      : [];
+
     const sum = (types: Entry["type"][]) =>
       monthEntries
-        .filter((e) => types.includes(e.type))
-        .reduce((total, e) => total + Number(e.amount ?? 0), 0);
+        .filter((entry) => types.includes(entry.type))
+        .reduce((total, entry) => total + Number(entry.amount ?? 0), 0);
 
     return {
-      label: monthLabel(key),
-      leave: monthEntries.filter((e) => e.type === "leave").length,
+      label: currentMonthKey ? monthLabel(currentMonthKey) : "",
+      leave: monthEntries.filter((entry) => entry.type === "leave").length,
       advances: sum(["advance"]),
       received: sum(["payment", "bonus"]),
     };
-  }, [visibleEntries]);
+  }, [visibleEntries, currentMonthKey]);
 
   function householdName(id: string) {
-    return (
-      households.find((household) => household.id === id)?.label ?? "Household"
-    );
+    return households.find((household) => household.id === id)?.label ?? "Household";
   }
 
   const noHouseholds = !loading && households.length === 0;
@@ -305,7 +377,6 @@ export default function RecordsPage() {
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-8 sm:py-10">
       <div className="mx-auto max-w-2xl space-y-8">
-        {/* Header */}
         <header className="space-y-4">
           <button
             type="button"
@@ -337,8 +408,7 @@ export default function RecordsPage() {
           </div>
         </header>
 
-        {/* This month summary */}
-        {!loading && visibleEntries.length > 0 && (
+        {!loading && visibleEntries.length > 0 && currentMonthKey && (
           <section
             aria-label={`Summary for ${thisMonth.label}`}
             className="rounded-2xl bg-slate-900 p-5 text-white shadow-sm"
@@ -370,7 +440,6 @@ export default function RecordsPage() {
           </section>
         )}
 
-        {/* No households */}
         {noHouseholds ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
             <p className="font-semibold text-slate-900">
@@ -382,7 +451,7 @@ export default function RecordsPage() {
             <button
               type="button"
               onClick={() => router.push("/engagements")}
-              className="mt-5 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-200"
+              className="mt-5 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
             >
               Add a household
             </button>
@@ -394,7 +463,6 @@ export default function RecordsPage() {
           >
             <h2 className="text-xl font-bold text-slate-900">Add a record</h2>
 
-            {/* Type */}
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium text-slate-700">
                 What do you want to record?
@@ -406,6 +474,7 @@ export default function RecordsPage() {
               >
                 {TYPE_OPTIONS.map((option) => {
                   const selected = type === option.value;
+
                   return (
                     <button
                       key={option.value}
@@ -446,7 +515,7 @@ export default function RecordsPage() {
                 <select
                   id="household"
                   value={householdId}
-                  onChange={(e) => setHouseholdId(e.target.value)}
+                  onChange={(event) => setHouseholdId(event.target.value)}
                   required
                   className={inputClass}
                 >
@@ -470,7 +539,7 @@ export default function RecordsPage() {
                   id="date"
                   type="date"
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
+                  onChange={(event) => setDate(event.target.value)}
                   required
                   className={inputClass}
                 />
@@ -496,7 +565,7 @@ export default function RecordsPage() {
                     min="0.01"
                     step="0.01"
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    onChange={(event) => setAmount(event.target.value)}
                     required
                     placeholder="e.g. 2000"
                     className="w-full rounded-r-xl bg-transparent px-4 py-3 text-lg font-semibold text-slate-900 placeholder:text-base placeholder:font-normal placeholder:text-slate-400 focus:outline-none"
@@ -511,15 +580,14 @@ export default function RecordsPage() {
                   htmlFor="note"
                   className="block text-sm font-medium text-slate-700"
                 >
-                  Note{" "}
-                  <span className="font-normal text-slate-400">(optional)</span>
+                  Note <span className="font-normal text-slate-400">(optional)</span>
                 </label>
                 <span className="text-xs text-slate-400">{note.length}/500</span>
               </div>
               <textarea
                 id="note"
                 value={note}
-                onChange={(e) => setNote(e.target.value)}
+                onChange={(event) => setNote(event.target.value)}
                 maxLength={500}
                 rows={3}
                 placeholder="e.g. Fever, went to the doctor"
@@ -539,20 +607,8 @@ export default function RecordsPage() {
             {success && (
               <p
                 role="status"
-                className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800"
+                className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800"
               >
-                <svg
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  className="h-5 w-5 shrink-0"
-                  aria-hidden="true"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.7-9.3a1 1 0 00-1.4-1.4L9 10.58 7.7 9.3a1 1 0 00-1.4 1.4l2 2a1 1 0 001.4 0l4-4z"
-                    clipRule="evenodd"
-                  />
-                </svg>
                 {success}
               </p>
             )}
@@ -567,7 +623,6 @@ export default function RecordsPage() {
           </form>
         )}
 
-        {/* Load error when the form isn't shown */}
         {error && noHouseholds && (
           <p
             role="alert"
@@ -577,15 +632,23 @@ export default function RecordsPage() {
           </p>
         )}
 
-        {/* History */}
         <section aria-label="Record history" className="space-y-5">
           <h2 className="text-xl font-bold text-slate-900">History</h2>
 
+          {shareError && (
+            <p
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            >
+              {shareError}
+            </p>
+          )}
+
           {loading ? (
             <div className="space-y-3" aria-busy="true">
-              {[0, 1, 2].map((i) => (
+              {[0, 1, 2].map((index) => (
                 <div
-                  key={i}
+                  key={index}
                   className="flex animate-pulse items-center gap-4 rounded-2xl border border-slate-100 bg-white p-4"
                 >
                   <div className="h-14 w-14 rounded-xl bg-slate-100" />
@@ -611,7 +674,8 @@ export default function RecordsPage() {
 
                 {monthEntries.map((entry) => {
                   const meta = typeMeta(entry.type);
-                  const d = parseDate(entry.entry_date);
+                  const day = parseDate(entry.entry_date);
+                  const shareLink = shareLinks[entry.id];
 
                   return (
                     <article
@@ -623,10 +687,10 @@ export default function RecordsPage() {
                         className={`flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl ${meta.tile}`}
                       >
                         <span className="text-xl font-bold leading-none">
-                          {d.getDate()}
+                          {day.getDate()}
                         </span>
                         <span className="mt-1 text-xs font-medium">
-                          {d.toLocaleDateString("en-IN", { month: "short" })}
+                          {day.toLocaleDateString("en-IN", { month: "short" })}
                         </span>
                       </div>
 
@@ -651,18 +715,72 @@ export default function RecordsPage() {
                         </div>
 
                         {entry.note && (
-                          <p className="mt-2 text-sm text-slate-600">
+                          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
                             {entry.note}
                           </p>
                         )}
 
                         <span
-                          className={`mt-3 inline-block rounded-full px-2.5 py-1 text-xs font-medium ${
-                            STATUS_STYLES[entry.status]
-                          }`}
+                          className={`mt-3 inline-block rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLES[entry.status]}`}
                         >
                           {STATUS_LABELS[entry.status]}
                         </span>
+
+                        {entry.status === "pending" && (
+                          <div className="mt-3 space-y-3">
+                            <button
+                              type="button"
+                              onClick={() => handleRequestConfirmation(entry)}
+                              disabled={sharingEntryId !== null}
+                              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {sharingEntryId === entry.id
+                                ? "Generating link…"
+                                : "Request confirmation"}
+                            </button>
+
+                            {shareLink && (
+                              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <p className="text-sm text-slate-600">
+                                  Confirmation link generated. Send it to your
+                                  employer.
+                                </p>
+
+                                <a
+                                  href={shareLink.whatsappUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-block rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700"
+                                >
+                                  Open WhatsApp
+                                </a>
+
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      await navigator.clipboard.writeText(
+                                        shareLink.confirmationUrl
+                                      );
+                                      setSuccess("Confirmation link copied.");
+                                    } catch {
+                                      setShareError(
+                                        "Could not copy the link. Open WhatsApp or copy the URL manually."
+                                      );
+                                    }
+                                  }}
+                                  className="ml-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                                >
+                                  Copy link
+                                </button>
+
+                                <p className="break-all text-xs text-slate-500">
+                                  {shareLink.confirmationUrl}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </article>
                   );
