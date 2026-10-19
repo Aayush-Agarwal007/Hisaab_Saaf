@@ -3,7 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-
+export const instant = false;
 export default async function DashboardPage() {
   await connection();
 
