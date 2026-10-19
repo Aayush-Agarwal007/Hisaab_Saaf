@@ -6,8 +6,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const token = body?.token;
-    const decision = body?.decision;
+
+    const token: unknown = body?.token;
+    const decision: unknown = body?.decision;
 
     if (
       typeof token !== "string" ||
@@ -19,7 +20,10 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!["confirmed", "contested"].includes(decision)) {
+    if (
+      decision !== "confirmed" &&
+      decision !== "contested"
+    ) {
       return NextResponse.json(
         { error: "Invalid decision." },
         { status: 400 }
@@ -41,7 +45,10 @@ export async function POST(request: Request) {
     );
 
     if (error) {
-      console.error("Confirmation API error:", error.message);
+      console.error(
+        "Confirmation API error:",
+        error.message
+      );
 
       return NextResponse.json(
         { error: "Unable to process this record." },
@@ -54,12 +61,17 @@ export async function POST(request: Request) {
         invalid_token: "This confirmation link is invalid.",
         used_token: "This link has already been used.",
         expired_token: "This confirmation link has expired.",
-        record_not_pending: "This record has already been resolved.",
+        record_not_pending:
+          "This record has already been resolved.",
         invalid_decision: "Invalid decision.",
       };
 
       return NextResponse.json(
-        { error: messages[data] ?? "Unable to process this record." },
+        {
+          error:
+            messages[data] ??
+            "Unable to process this record.",
+        },
         { status: 400 }
       );
     }
