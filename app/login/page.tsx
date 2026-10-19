@@ -2,6 +2,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -47,14 +48,14 @@ export default function LoginPage() {
 
         if (authError.code === "email_not_confirmed") {
           setError(
-            "Your account is not confirmed. Please confirm it in Supabase."
+            "Your account is not confirmed. Please contact support."
           );
         } else if (
           authError.code === "invalid_credentials" ||
           authError.status === 400
         ) {
           setError(
-            "Number or PIN is incorrect. Check the registered phone and PIN."
+            "Number or PIN is incorrect. Check your details or use Forgot PIN."
           );
         } else {
           setError("Login failed. Check your connection and try again.");
@@ -63,7 +64,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.replace("/consent");
+      router.replace("/");
       router.refresh();
     } catch (caughtError) {
       console.error("Unexpected login error:", caughtError);
@@ -90,9 +91,12 @@ export default function LoginPage() {
             <p className="text-sm font-medium text-slate-500">
               Aapka kaam, aapka hisaab.
             </p>
+            <p className="pt-2 text-sm text-slate-600">
+              Sign in to manage your work records.
+            </p>
           </header>
 
-          <div className="space-y-5 pt-4">
+          <div className="space-y-5 pt-2">
             <div className="space-y-1.5">
               <label
                 htmlFor="phone"
@@ -108,10 +112,10 @@ export default function LoginPage() {
                 maxLength={10}
                 required
                 value={phone}
-                onChange={(e) =>
-                  setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                onChange={(event) =>
+                  setPhone(event.target.value.replace(/\D/g, "").slice(0, 10))
                 }
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 transition-all placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 placeholder="10-digit mobile number"
               />
             </div>
@@ -131,12 +135,21 @@ export default function LoginPage() {
                 maxLength={6}
                 required
                 value={pin}
-                onChange={(e) =>
-                  setPin(e.target.value.replace(/\D/g, "").slice(0, 6))
+                onChange={(event) =>
+                  setPin(event.target.value.replace(/\D/g, "").slice(0, 6))
                 }
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-lg tracking-[0.5em] text-slate-900 transition-all placeholder:tracking-normal placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-lg tracking-[0.5em] text-slate-900 placeholder:tracking-normal placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 placeholder="••••••"
               />
+
+              <div className="flex justify-end pt-1">
+                <Link
+                  href="/forgot-pin"
+                  className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                >
+                  Forgot PIN?
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -149,10 +162,20 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-3.5 text-base font-semibold text-white transition-all hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
+            className="flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-3.5 text-base font-semibold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loading ? "Please wait..." : "Andar jaayein"}
           </button>
+
+          <div className="border-t border-slate-200 pt-5 text-center">
+            <p className="text-sm font-semibold text-slate-800">
+              First time using Hisaab Saaf?
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Worker accounts are currently created by the administrator.
+              Contact support to get your account and initial PIN.
+            </p>
+          </div>
         </form>
       </div>
     </main>
