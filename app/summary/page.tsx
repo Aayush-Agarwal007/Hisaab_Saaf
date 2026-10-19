@@ -89,7 +89,9 @@ const [shareError, setShareError] = useState("");
 const [shareUrl, setShareUrl] = useState("");
 const [whatsappUrl, setWhatsappUrl] = useState("");
 const [linkExpiresAt, setLinkExpiresAt] = useState("");
-
+const [revoking, setRevoking] = useState(false);
+const [revoked, setRevoked] = useState(false);
+const [revokeError, setRevokeError] = useState("");
 
   useEffect(() => {
     setMonth(getCurrentMonth());
@@ -267,7 +269,44 @@ async function handleShareSummary() {
     setSharing(false);
   }
 }
+async function handleRevokeSummary() {
+  if (!shareUrl) return;
 
+  const confirmed = window.confirm(
+    "Are you sure you want to revoke this share link?"
+  );
+
+  if (!confirmed) return;
+
+  setRevoking(true);
+  setRevokeError("");
+
+  try {
+    const token = new URL(shareUrl).pathname.split("/").pop();
+
+    const response = await fetch("/api/summary-link/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Could not revoke the link.");
+    }
+
+    setRevoked(true);
+  } catch (error) {
+    setRevokeError(
+      error instanceof Error
+        ? error.message
+        : "Something went wrong."
+    );
+  } finally {
+    setRevoking(false);
+  }
+}
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 sm:px-8">
       <div className="mx-auto max-w-3xl space-y-6">
@@ -341,7 +380,27 @@ async function handleShareSummary() {
         <p className="text-xs text-slate-500">
           Expires: {new Date(linkExpiresAt).toLocaleString("en-IN")}
         </p>
-      )}
+                )}
+                {!revoked ? (
+  <button
+    type="button"
+    onClick={handleRevokeSummary}
+    disabled={revoking}
+    className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 disabled:opacity-50"
+  >
+    {revoking ? "Revoking link..." : "Revoke link"}
+  </button>
+) : (
+  <p className="text-sm font-semibold text-red-700">
+    This share link has been revoked.
+  </p>
+)}
+
+{revokeError && (
+  <p role="alert" className="text-sm text-red-700">
+    {revokeError}
+  </p>
+)}
     </div>
   )}
 </section>

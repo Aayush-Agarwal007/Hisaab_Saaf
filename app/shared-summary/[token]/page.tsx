@@ -38,7 +38,8 @@ export default async function SharedSummaryPage({ params }: Props) {
 
   const { data: tokenRecord, error: tokenError } = await admin
     .from("tokens")
-    .select("id, engagement_id, month, expires_at, used_at")
+    //.select("id, engagement_id, month, expires_at, used_at")
+    .select("id, engagement_id, month, expires_at, used_at, revoked_at")
     .eq("token_hash", tokenHash)
     .eq("purpose", "summary")
     .maybeSingle();
@@ -48,9 +49,13 @@ export default async function SharedSummaryPage({ params }: Props) {
     return <Unavailable />;
   }
 
-  if (!tokenRecord || tokenRecord.used_at) {
-    return <Unavailable />;
-  }
+  if (
+  !tokenRecord ||
+  tokenRecord.used_at ||
+  tokenRecord.revoked_at
+) {
+  return <Unavailable />;
+}
 
   if (new Date(tokenRecord.expires_at).getTime() <= Date.now()) {
     return <Unavailable expired />;
