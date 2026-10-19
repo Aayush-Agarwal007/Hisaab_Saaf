@@ -1,4 +1,3 @@
-
 "use client";
 
 import { FormEvent, useState } from "react";
@@ -33,11 +32,10 @@ export default function LoginPage() {
       const supabase = createClient();
       const email = `91${phone}@u.hisaabsaaf.app`;
 
-      const { error: authError } =
-        await supabase.auth.signInWithPassword({
-          email,
-          password: pin,
-        });
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password: pin,
+      });
 
       if (authError) {
         console.error("Login failed:", {
@@ -47,15 +45,13 @@ export default function LoginPage() {
         });
 
         if (authError.code === "email_not_confirmed") {
-          setError(
-            "Your account is not confirmed. Please contact support."
-          );
+          setError("Your account is not confirmed. Please contact support.");
         } else if (
           authError.code === "invalid_credentials" ||
           authError.status === 400
         ) {
           setError(
-            "Number or PIN is incorrect. Check your details or use Forgot PIN."
+            "Number or PIN is incorrect. Check your details or use Forgot PIN.",
           );
         } else {
           setError("Login failed. Check your connection and try again.");
@@ -169,12 +165,14 @@ export default function LoginPage() {
 
           <div className="border-t border-slate-200 pt-5 text-center">
             <p className="text-sm font-semibold text-slate-800">
-              First time using Hisaab Saaf?
+              New to Hisaab Saaf?
             </p>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Worker accounts are currently created by the administrator.
-              Contact support to get your account and initial PIN.
-            </p>
+            <Link
+              href="/register"
+              className="mt-2 inline-block text-sm font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+            >
+              Create a worker account
+            </Link>
           </div>
         </form>
       </div>
