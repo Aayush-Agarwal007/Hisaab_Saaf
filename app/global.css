@@ -1,0 +1,86 @@
+/* Hisaab Saaf splash animations */
+
+.logo-entrance {
+    animation: splash-logo-in 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.logo-check {
+    stroke-dasharray: 40;
+    stroke-dashoffset: 40;
+    animation: splash-check 600ms ease-out 450ms forwards;
+}
+
+.brand-entrance {
+    animation: splash-text-in 600ms ease-out 200ms both;
+}
+
+.tagline-entrance {
+    animation: splash-text-in 600ms ease-out 450ms both;
+}
+
+.loading-line {
+    animation: splash-loading 1.8s ease-in-out infinite;
+    transform-origin: left;
+}
+
+@keyframes splash-logo-in {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.82);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes splash-check {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes splash-text-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes splash-loading {
+    0% {
+        transform: scaleX(0.15);
+        opacity: 0.5;
+    }
+
+    50% {
+        transform: scaleX(1);
+        opacity: 1;
+    }
+
+    100% {
+        transform: scaleX(0.15);
+        opacity: 0.5;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .logo-entrance,
+    .logo-check,
+    .brand-entrance,
+    .tagline-entrance,
+    .loading-line {
+        animation: none !important;
+    }
+
+    .logo-check {
+        stroke-dashoffset: 0;
+    }
+}
