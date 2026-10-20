@@ -1,93 +1,107 @@
 
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const configuredSecret = process.env.ACCOUNT_RECOVERY_SECRET;
+  const suppliedSecret = request.headers.get("x-account-recovery-secret");
+
+  if (!configuredSecret || !suppliedSecret || suppliedSecret !== configuredSecret) {
+    return NextResponse.json(
+      { error: "Unauthorized." },
+      { status: 401 }
+    );
+  }
+
   try {
-    // 1. Verify the worker's authenticated session.
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: "Please sign in to delete your account." },
-        { status: 401 }
-      );
-    }
-
-    // 2. Use the admin client only on the server.
-      
-    // 2. Use the admin client only on the server.
     const admin = createAdminClient();
 
-    const {
-      data: authUserData,
-      error: authUserCheckError,
-    } = await admin.auth.admin.getUserById(user.id);
+    const { data: jobs, error: jobsError } = await admin
+      .from("account_deletion_jobs")
+      .select("user_id, status")
+      .eq("status", "pending")
+      .limit(20);
 
-    if (authUserCheckError || !authUserData.user) {
-      console.error(
-        "Account deletion Auth check failed:",
-        authUserCheckError?.message
-      );
-
+    if (jobsError) {
+      console.error("Could not load deletion jobs:", jobsError.message);
       return NextResponse.json(
-        { error: "Unable to verify your account for deletion." },
+        { error: "Could not load pending deletion jobs." },
         { status: 500 }
       );
     }
 
-    // 3. Delete the worker's database records transactionally.
-    const { error: databaseDeleteError } = await admin.rpc(
-      "delete_worker_data",
-      { p_worker_id: user.id }
-    );
+    let completed = 0;
+    let failed = 0;
 
-    if (databaseDeleteError) {
-      console.error(
-        "Account database deletion failed:",
-        databaseDeleteError.message
-      );
+    for (const job of jobs ?? []) {
+      // Auth deletion is safe to retry: a missing Auth user means
+      // the account is already gone.
+      const { error: deleteError } =
+        await admin.auth.admin.deleteUser(job.user_id);
 
-      return NextResponse.json(
-        { error: "Unable to delete your records. Please try again." },
-        { status: 500 }
-      );
-    }
+      if (deleteError) {
+        const { data: existingUser, error: lookupError } =
+          await admin.auth.admin.getUserById(job.user_id);
 
-    // 4. Delete the Supabase Auth account.
-    const { error: authDeleteError } =
-      await admin.auth.admin.deleteUser(user.id);
+        if (!lookupError && !existingUser.user) {
+          // If the Auth account no longer exists, finish the job.
+          const { error: updateError } = await admin
+            .from("account_deletion_jobs")
+            .update({
+              status: "completed",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", job.user_id)
+            .eq("status", "pending");
 
-    if (authDeleteError) {
-      console.error(
-        "Auth account deletion failed after data deletion:",
-        authDeleteError.message
-      );
+          if (updateError) {
+            failed++;
+            continue;
+          }
 
-      return NextResponse.json(
-        {
-          error:
-            "Your records were deleted, but account closure could not be completed. Please contact support.",
-        },
-        { status: 500 }
-      );
+          completed++;
+          continue;
+        }
+
+        failed++;
+        console.error(
+          "Auth deletion retry failed:",
+          deleteError.message
+        );
+        continue;
+      }
+
+      const { error: updateError } = await admin
+        .from("account_deletion_jobs")
+        .update({
+          status: "completed",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", job.user_id)
+        .eq("status", "pending");
+
+      if (updateError) {
+        failed++;
+        console.error(
+          "Could not complete deletion job:",
+          updateError.message
+        );
+        continue;
+      }
+
+      completed++;
     }
 
     return NextResponse.json({
       success: true,
-      message: "Your account and associated records have been deleted.",
+      processed: jobs?.length ?? 0,
+      completed,
+      failed,
     });
   } catch (error) {
-    console.error("Account deletion request failed:", error);
-
+    console.error("Deletion recovery failed:", error);
     return NextResponse.json(
-      { error: "Unexpected error while deleting your account." },
+      { error: "Unexpected recovery error." },
       { status: 500 }
     );
   }
