@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function POST() {
   try {
-    // 1. Verify the signed-in worker.
+    // 1. Verify the worker's authenticated session.
     const supabase = await createClient();
 
     const {
@@ -20,9 +20,30 @@ export async function POST() {
       );
     }
 
-    // 2. Delete the worker's database records in one transaction.
-    // This uses the authenticated client, not the service-role client.
-    const { error: databaseDeleteError } = await supabase.rpc(
+    // 2. Use the admin client only on the server.
+      
+    // 2. Use the admin client only on the server.
+    const admin = createAdminClient();
+
+    const {
+      data: authUserData,
+      error: authUserCheckError,
+    } = await admin.auth.admin.getUserById(user.id);
+
+    if (authUserCheckError || !authUserData.user) {
+      console.error(
+        "Account deletion Auth check failed:",
+        authUserCheckError?.message
+      );
+
+      return NextResponse.json(
+        { error: "Unable to verify your account for deletion." },
+        { status: 500 }
+      );
+    }
+
+    // 3. Delete the worker's database records transactionally.
+    const { error: databaseDeleteError } = await admin.rpc(
       "delete_worker_data",
       { p_worker_id: user.id }
     );
@@ -34,20 +55,18 @@ export async function POST() {
       );
 
       return NextResponse.json(
-        { error: "Unable to delete your data. Please try again." },
+        { error: "Unable to delete your records. Please try again." },
         { status: 500 }
       );
     }
 
-    // 3. Delete the Supabase Auth account.
-    const admin = createAdminClient();
-
+    // 4. Delete the Supabase Auth account.
     const { error: authDeleteError } =
       await admin.auth.admin.deleteUser(user.id);
 
     if (authDeleteError) {
       console.error(
-        "Auth account deletion failed after database cleanup:",
+        "Auth account deletion failed after data deletion:",
         authDeleteError.message
       );
 
